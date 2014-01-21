@@ -9,7 +9,10 @@
 
 //void drive(uint8_t dir);
 void nesdrive();
+void autopilot();
 void move(int8_t* dir, int8_t* spd);
+
+uint8_t sensor_data;
 
 void nesdrive()	//translates input from nes controller to simple commands for driving the motors
 {
@@ -51,40 +54,117 @@ void nesdrive()	//translates input from nes controller to simple commands for dr
 	move(&dir,&spd);	
 }
 
+void autopilot()
+{
+    // 0: right-most sensor
+    // 1: second from right
+    // 2: etc
+
+    // value 1: sensor detects black
+    // value 0: sensors detects non-black things
+
+    // to read one bit
+    // sensor_data = (PINB >> 0)&1;
+    // sensor_data = (PINB >> 1)&1;
+
+    // To read first 4 bits and ignore last 4
+    sensor_data = PINB&0x0f;
+
+    // To check if first field is 1
+
+    uint8_t dir = 0;
+    uint8_t speed = 5;
+
+    // Write the status of the 2nd sensor to PORTB bit 5
+    // PORTB = ((sensor_data >> 2)&1) <<5|PORTB&~(1<<5);
+    if (sensor_data)
+        PORTB = 1<<5|PORTB&~(1<<5);
+    else
+        PORTB = 0<<5|PORTB&~(1<<5);
+
+    if ((sensor_data >> 0)&1)
+    {
+        // Right-most sensor detects a line - must turn
+        dir = 127;
+        speed = 0;
+        move(&dir,&speed);
+    }
+    else if ((sensor_data >> 3)&1)
+    {
+        // Left-most sensor detects a line - must turn
+        dir = -127;
+        speed = 0;
+        move(&dir, &speed);
+    }
+    else if ( ((sensor_data >> 1)&1) && (sensor_data >> 2)&1 )
+    {
+        // Both middle sensors detect a line, go forwards
+        dir = 0;
+        move(&dir, &speed);
+    }
+    else if ( ((sensor_data >> 1)&1) && !(sensor_data >> 2)&1 )
+    {
+        // Second sensor from right detects a line, but the other middle one does not
+        // Turn slightly to right
+        dir = 20;
+        move(&dir, &speed);
+    }
+    else if ( !((sensor_data >> 1)&1) && (sensor_data >> 2)&1)
+    {
+        // Second sensor from left detects a line, but the other middle one does not
+        // Turn slightly to left
+        dir = -20;
+        move(&dir, &speed);
+    }
+    
+}
+
 void move(int8_t* dir, int8_t* spd) //drive motors
 {
 	static int  lmotor,rmotor;
+    static int current_dir = 0;
+    static int current_speed = 0;
 	//set motor speeds according to direction and speed
 
-	if(*dir==0)
+    if (current_dir < *dir)
+        current_dir++;
+    else if (current_dir > *dir)
+        current_dir--;
+
+    if (current_speed < *spd)
+        current_speed++;
+    else if (current_speed < *spd)
+        current_speed--;
+
+	if(current_dir==0)
 	{
-		lmotor=*spd;
-		rmotor=*spd;
+		lmotor=current_speed;
+		rmotor=current_speed;
 	}
-	else if(*spd>=0)	//set motor speeds while driving forwards
+	else if(current_speed>=0)	//set motor speeds while driving forwards
 	{
-		if(*dir<0)	//turning left
+		if(current_dir<0)	//turning left
 		{
-			lmotor=*spd+*dir;	//set left motor speed and direction
-			rmotor=*spd*(127+*dir)/127-*dir;	//limit right motor maximum speed
+			lmotor=current_speed+current_dir;	//set left motor speed and direction
+			rmotor=current_speed*(127+current_dir)/127-current_dir;	//limit right motor maximum speed
 		}
-		else if(*dir>0)	//turning right
+		else if(current_dir>0)	//turning right
 		{
-			rmotor=*spd-*dir;	//set right motor speed and direction
-			lmotor=*spd*(127-*dir)/127+*dir;	//limit left motor maximum speed
+			rmotor=current_speed-current_dir;	//set right motor speed and direction
+			lmotor=current_speed*(127-current_dir)/127+current_dir;	//limit left motor maximum speed
 		}
 	}
 	else	//backwards
 	{
-		if(*dir<0)	//turning left
+		if(current_dir<0)	//turning left
 		{
-			rmotor=*spd-*dir;	//set left motor speed and direction
-			lmotor=*spd*(127+*dir)/127+*dir;	//limit right motor maximum speed speed
+			rmotor=current_speed-current_dir;	//set left motor speed and direction
+			lmotor=current_speed*(127+current_dir)/127+current_dir;	//limit right motor maximum speed speed
 		}
-		else if(*dir>0)	//turning right
+		else if(current_dir>0)	//turning right
 		{
-			lmotor=*spd+*dir;	//set right motor speed and direction
-			rmotor=*spd*(127-*dir)/127-*dir;	//limit left motor maximum speed speed
+			lmotor=current_speed+current_dir;	//set right motor speed and direction
+			rmotor=current_speed*(127-current_dir)/127-current_dir;	//limit left motor maximum speed speed
 		}
 	}
 	
@@ -107,8 +187,9 @@ int main(void)
 	nessetup();
 	
 	//motor setup
-	DDRB=0xff;	//portb as output
-	PORTB=0xff;	//all high
+	//DDRB=0x00;	//portb5 as output
+    DDRB = 0b100000;
+	PORTB=0b011111; //all high
 	DDRD=0x0f;	//motor pins as output
 	TCCR1A = (1<<COM1B1)|(1<<COM1A1)|(1<<WGM10);	//fast pwm
 	TCCR1B = (1<<CS10)|(1<<WGM12);	//no prescale
@@ -121,7 +202,7 @@ int main(void)
 	nesread();	//read nes controller before beginning to drive
 	while(1)
 	{
-	 nesdrive();
+	 autopilot();
 	 _delay_ms(1);	//add delay to make the robot accelerate/decelerate slower
 	}
 
@@ -129,5 +210,5 @@ int main(void)
 
 SIGNAL(TIMER0_OVF_vect)
 {
-	nesread(); //read the nes controller
+	//nesread(); //read the nes controller
 }
