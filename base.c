@@ -7,13 +7,13 @@
 #include <math.h>
 #include "nes.h"
 
-void nesdrive();
+uint8_t nesdrive();
 void sensordrive();
 void move(int8_t dir, int8_t spd);
 
 uint8_t sensor_data;
 
-void nesdrive()	//translates input from nes controller to simple commands for driving the motors
+uint8_t nesdrive()	//translates input from nes controller to simple commands for driving the motors
 {
 	static int8_t dir=0,spd=0;
 	uint8_t turning=0,moving=0;
@@ -42,30 +42,27 @@ void nesdrive()	//translates input from nes controller to simple commands for dr
 		//if(dir<127) dir++;
 		turning=1;
 	}
+	if(~nes>>4&1) //SART
+	{
+		return(0);
+	}
 
 	//slow things down if no input
 	if(moving==0)
 	{
 		spd=0;
-		/*if(spd>0) spd--;
-		else if(spd<0) spd++;*/
 	}
 	if(turning==0)
 	{	
 		dir=0;
-		/*if(dir>0) dir--;
-		else if(dir<0) dir++;*/
 	}
-	move(dir,spd);	
+	move(dir,spd);
+	return(1);
 }
 void sensordrive()
 {
 	uint8_t sensor=(PIND>>4)&0xf;
 	int8_t spd, dir;
-	if(sensor)
-		PORTB=PORTB|(1<<5);
-	else
-		PORTB= PORTB&~(1<<5);
 	
 	switch (sensor)
 	{
@@ -105,8 +102,12 @@ void sensordrive()
 			spd=0;
 			dir=127;
 			break;
-		case 0b0000:	//lost line
-			spd=-80;
+		case 0b0000:	//lost line. gun it.
+			spd=80;
+			dir=0;
+			break;
+		case 0b1111:	//most likely a cossing. gun it.
+			spd=127;
 			dir=0;
 			break;
 		default:
@@ -184,7 +185,7 @@ int main(void)
 	nessetup();
 	
 	//motor setup
-	DDRB = 0b100110;	//PB5 as output PB1&2 pwm
+	DDRB = 0b100110;	//PB0 button, PB5 as output PB1&2 pwm
 	PORTB=0b011001; //PB1&2 must not be touched(pwm output)!!
 	DDRD=0x0f;	//motor pins as output and line detector pins as input
 	PORTD= 0xf0;	//pull-up on detector pins
@@ -197,17 +198,21 @@ int main(void)
 	sei();	//enable interrupts
 	
 	nesread();	//read nes controller before beginning to drive
+	while (nesdrive())
+		_delay_ms(1);
+	while(PINB&1);	//wait for button to be pressed
 	while(1)
 	{
-	//	nesdrive();
 		sensordrive();
 		_delay_ms(1);
 	}
-
 }
 
 SIGNAL(TIMER0_OVF_vect)
 {
-	//autopilot();
+	if(PIND&0xf0)
+		PORTB=PORTB|(1<<5);
+	else
+		PORTB= PORTB&~(1<<5);
 	nesread(); //read the nes controller
 }
