@@ -102,8 +102,8 @@ void sensordrive()
 			spd=0;
 			dir=127;
 			break;
-		case 0b0000:	//lost line. gun it.
-			spd=80;
+		case 0b0000:	//lost line. back up.
+			spd=-80;
 			dir=0;
 			break;
 		case 0b1111:	//most likely a cossing. gun it.
@@ -198,9 +198,11 @@ int main(void)
 	sei();	//enable interrupts
 	
 	nesread();	//read nes controller before beginning to drive
-	while (nesdrive())
-		_delay_ms(1);
 	while(PINB&1);	//wait for button to be pressed
+	{
+		nesdrive();
+		_delay_ms(1);
+	}
 	while(1)
 	{
 		sensordrive();
@@ -214,5 +216,6 @@ SIGNAL(TIMER0_OVF_vect)
 		PORTB=PORTB|(1<<5);
 	else
 		PORTB= PORTB&~(1<<5);
+	
 	nesread(); //read the nes controller
 }
