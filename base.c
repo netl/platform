@@ -198,7 +198,7 @@ int main(void)
 	sei();	//enable interrupts
 	
 	nesread();	//read nes controller before beginning to drive
-	while(PINB&1);	//wait for button to be pressed
+	while(PINB&1)	//wait for button to be pressed
 	{
 		nesdrive();
 		_delay_ms(1);
